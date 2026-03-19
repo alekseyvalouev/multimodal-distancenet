@@ -178,8 +178,8 @@ class LanguageDistanceDataset(Dataset):
         end_prompt = end_prompt.strip()
 
         return {
-            "image": images,
-            "prefix": f"answer en {start_prompt} {end_prompt} What is the temporal distance?\n",
+            "image": images if len(images) > 0 else [np.zeros((224, 224, 3), dtype=np.uint8)],
+            "prefix": f"answer en {'<image> ' if len(images) == 0 else ''} {start_prompt} {end_prompt} What is the temporal distance?\n",
             "suffix": f"{label}"
         }
 

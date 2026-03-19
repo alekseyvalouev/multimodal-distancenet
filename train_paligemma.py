@@ -95,7 +95,7 @@ def train(model, collate_fn):
         bf16=False,
         fp16=True,
         push_to_hub=False,
-        report_to="none"
+        report_to="wandb"
     )
 
     trainer = Trainer(
