@@ -1,0 +1,16 @@
+checkpoint-*/
+checkpoint-*/*
+.env
+*.out
+*.png
+__pycache__/
+wandb/
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.pywz
+*.pyzw
+*.pyzwz
+*.pyzwzw
