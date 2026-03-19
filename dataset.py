@@ -112,11 +112,10 @@ class SacsonDataset(Dataset):
 
 
 class LanguageDistanceDataset(Dataset):
-    def __init__(self, annotations_folder, horizons=[2, 4, 8, 16], transform=None, lang_labels=True):
+    def __init__(self, annotations_folder, horizons=[2, 4, 8, 16], transform=None):
         self.annotations_folder = annotations_folder
         self.horizons = horizons
         self.transform = transform
-        self.lang_labels = lang_labels
         self._load_data()
 
         # now load the actual sacson loader
@@ -135,33 +134,55 @@ class LanguageDistanceDataset(Dataset):
                 annotation = json.load(f)
             self.annotations[scene_name] = annotation["landmarks"]
     
-    def _stitch_images(self, img1, img2):
-        stitched_img = np.concatenate([img1, img2], axis=1)
-        return stitched_img
-
     def __len__(self):
         return len(self.sacson_data)
     
     def __getitem__(self, idx):
         # I think transforms will actually just break this :(
         start_name, end_name, start_scene, end_scene, start_img, end_img, label = self.sacson_data[idx]
-        input_image = self._stitch_images(start_img, end_img)
         start_landmarks = self.annotations[start_scene][start_name]
         end_landmarks = self.annotations[end_scene][end_name]
         start_landmarks_str = " ".join([f"{i+1}. {landmark}" for i, landmark in enumerate(start_landmarks)])
         end_landmarks_str = " ".join([f"{i+1}. {landmark}" for i, landmark in enumerate(end_landmarks)])
-        if self.lang_labels:
-            return {
-            "image": input_image,
-                "prefix": f"answer en Starting image: {start_landmarks_str} Ending image: {end_landmarks_str}. What is the temporal distance?\n",
-                "suffix": f"{label}"
-            }
-        else:
-            return {
-                "image": input_image,
-                "prefix": f"answer en What is the temporal distance?\n",
-                "suffix": f"{label}"
-            }
+
+        start_img_str = f"Starting image: <image>"
+        end_img_str = f"Ending image: <image>"
+        start_landmarks_str = f"Starting landmarks: {start_landmarks_str}"
+        end_landmarks_str = f"Ending landmarks: {end_landmarks_str}"
+
+        options = ["L-L", "V-V", "VL-VL", "L-V", "V-L", "V-VL", "VL-V", "L-VL"]
+        option = np.random.choice(options).split("-")
+        start_option = option[0]
+        end_option = option[1]
+
+        images = []
+
+        start_prompt = ""
+        for char in start_option:
+            if char == "L":
+                start_prompt += start_landmarks_str
+            elif char == "V":
+                start_prompt += start_img_str
+                images.append(start_img)
+            start_prompt += " "
+        start_prompt = start_prompt.strip()
+        
+        end_prompt = ""
+        for char in end_option:
+            if char == "L":
+                end_prompt += end_landmarks_str
+            elif char == "V":
+                end_prompt += end_img_str
+                images.append(end_img)
+            end_prompt += " "
+        end_prompt = end_prompt.strip()
+
+        return {
+            "image": images,
+            "prefix": f"answer en {start_prompt} {end_prompt} What is the temporal distance?\n",
+            "suffix": f"{label}"
+        }
+
 
 if __name__ == "__main__":
     dataset = LanguageDistanceDataset(annotations_folder="/home/alekseyvalouev/goalnav/language-annotations-train")
