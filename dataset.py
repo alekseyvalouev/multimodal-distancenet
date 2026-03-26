@@ -20,7 +20,7 @@ class SacsonDataset(Dataset):
         for i, h in enumerate(horizons):
             assert h / self.scale_factor % 1 == 0, "Horizon must be a multiple of 0.4 (scaling factor for Sacson)"
             self.horizons.append(int(h / self.scale_factor))
-            self.labels[h] = i
+            self.labels[int(h / self.scale_factor)] = i
         self.scenes = scenes
         self.negative_samples = negative_samples
         self.transform = transform
@@ -28,7 +28,7 @@ class SacsonDataset(Dataset):
         self._load_data()
         if self.negative_samples:
             self._load_negative_samples()
-            self.labels[-1] = len(self.horizons)
+            self.labels[-1] = -1
     
     def _load_data(self):
         self.data = []
@@ -61,7 +61,7 @@ class SacsonDataset(Dataset):
 
     def _load_negative_samples(self):
         self.negative_samples = []
-        p = 0.25
+        p = 0.5
         for _ in range(int(len(self.data) * p)):
             scene_start, scene_end = np.random.choice(self.scenes, size=2, replace=False)
             start_img = self._make_random_sample(scene_start)
@@ -104,18 +104,21 @@ class SacsonDataset(Dataset):
             start_img = self.transform(start_img)
             end_img = self.transform(end_img)
         label = horizon
+        if label == -1 and not self.classification:
+            label = max(self.horizons)
         if self.classification:
             label = self.labels[horizon]
-        if label == -1:
-            label = max(self.horizons)
-        return start_name, end_name, start_scene, end_scene, start_img, end_img, int(label*self.scale_factor)
+        else:
+            label = int(label*self.scale_factor)
+        return start_name, end_name, start_scene, end_scene, start_img, end_img, label
 
 
 class LanguageDistanceDataset(Dataset):
-    def __init__(self, annotations_folder, horizons=[2, 4, 8, 16], transform=None):
+    def __init__(self, annotations_folder, horizons=[2, 4, 8, 16], transform=None, text_only=False):
         self.annotations_folder = annotations_folder
         self.horizons = horizons
         self.transform = transform
+        self.text_only = text_only
         self._load_data()
 
         # now load the actual sacson loader
@@ -150,7 +153,7 @@ class LanguageDistanceDataset(Dataset):
         start_landmarks_str = f"Starting landmarks: {start_landmarks_str}"
         end_landmarks_str = f"Ending landmarks: {end_landmarks_str}"
 
-        options = ["L-L", "V-V", "VL-VL", "L-V", "V-L", "V-VL", "VL-V", "L-VL"]
+        options = ["L-L"] if self.text_only else ["V-V", "VL-VL", "L-V", "V-L", "V-VL", "VL-V", "L-VL"]
         option = np.random.choice(options).split("-")
         start_option = option[0]
         end_option = option[1]
@@ -183,6 +186,82 @@ class LanguageDistanceDataset(Dataset):
             "suffix": f"{label}"
         }
 
+class BinaryReachabilityDataset(Dataset):
+    def __init__(self, annotations_folder, horizons=[2, 4, 8, 16], transform=None, text_only=False):
+        self.annotations_folder = annotations_folder
+        self.horizons = horizons
+        self.transform = transform
+        self.text_only = text_only
+        self._load_data()
+
+        # now load the actual sacson loader
+        self.sacson_data = SacsonDataset(self.scenes, self.horizons, transform=self.transform, classification=True)
+    
+    def _load_data(self):
+        # load self.scenes
+        self.scenes = []
+        # load self.annotations 
+        self.annotations = {}
+        # iterate through the annotations folder and load each json
+        for annotation_file in os.listdir(self.annotations_folder):
+            scene_name = annotation_file.replace("_landmarks.json", "")
+            self.scenes.append(scene_name)
+            with open(os.path.join(self.annotations_folder, annotation_file), "r") as f:
+                annotation = json.load(f)
+            self.annotations[scene_name] = annotation["landmarks"]
+    
+    def __len__(self):
+        return len(self.sacson_data)
+    
+    def __getitem__(self, idx):
+        # I think transforms will actually just break this :(
+        start_name, end_name, start_scene, end_scene, start_img, end_img, label = self.sacson_data[idx]
+        if label == -1 or label > 8:
+            label = 0
+        else:
+            label = 1
+        start_landmarks = self.annotations[start_scene][start_name]
+        end_landmarks = self.annotations[end_scene][end_name]
+        start_landmarks_str = " ".join([f"{i+1}. {landmark}" for i, landmark in enumerate(start_landmarks)])
+        end_landmarks_str = " ".join([f"{i+1}. {landmark}" for i, landmark in enumerate(end_landmarks)])
+
+        start_img_str = f"Starting image: <image>"
+        end_img_str = f"Ending image: <image>"
+        start_landmarks_str = f"Starting landmarks: {start_landmarks_str}"
+        end_landmarks_str = f"Ending landmarks: {end_landmarks_str}"
+
+        options = ["L-L"] if self.text_only else ["V-V", "VL-VL", "L-V", "V-L", "V-VL", "VL-V", "L-VL"]
+        option = np.random.choice(options).split("-")
+        start_option = option[0]
+        end_option = option[1]
+
+        images = []
+
+        start_prompt = ""
+        for char in start_option:
+            if char == "L":
+                start_prompt += start_landmarks_str
+            elif char == "V":
+                start_prompt += start_img_str
+                images.append(start_img)
+            start_prompt += " "
+        start_prompt = start_prompt.strip()
+        
+        end_prompt = ""
+        for char in end_option:
+            if char == "L":
+                end_prompt += end_landmarks_str
+            elif char == "V":
+                end_prompt += end_img_str
+                images.append(end_img)
+            end_prompt += " "
+        end_prompt = end_prompt.strip()
+
+        return {
+            "image": images if len(images) > 0 else [np.zeros((224, 224, 3), dtype=np.uint8)],
+            "prefix": f"answer en {'<image> ' if len(images) == 0 else ''} {start_prompt} {end_prompt} What is the temporal distance?\n",
+            "suffix": f"{label}"
+        }
 
 if __name__ == "__main__":
     dataset = LanguageDistanceDataset(annotations_folder="/home/alekseyvalouev/goalnav/language-annotations-train")
