@@ -95,13 +95,13 @@ def main() -> None:
     # Client picks up GEMINI_API_KEY from env, but we pass it explicitly too
     client = genai.Client(api_key=api_key)
 
-    image_path = "/hdd/sacson/Nov-17-2022-bww8_00000000_0/1.jpg"
+    image_path = "/hdd/sacson/Nov-17-2022-bww8_00000000_0/40.jpg"
     with open(image_path, 'rb') as f:
         image_bytes = f.read()
 
     try:
         response = client.models.generate_content(
-            model="gemini-3-pro-image-preview",
+            model="gemini-3.1-pro-preview",
             contents=[
                 genai.types.Part.from_bytes(
                     data=image_bytes,
@@ -109,6 +109,7 @@ def main() -> None:
                 ),
                 annotate_landmarks
             ],
+            config=genai.types.GenerateContentConfig(temperature=0, seed=42)
             #config={
             #    "response_mime_type": "application/json",
             #    "response_schema": Landmarks,
@@ -118,10 +119,10 @@ def main() -> None:
         print("Model response:")
         print(response.text)
 
-        #landmarks = Landmarks.model_validate_json(response.text)
-        #out_dir = Path(__file__).resolve().parent
-        #output_png = out_dir / "landmarks_output.png"
-        #draw_landmarks_on_image(image_path, landmarks, str(output_png))
+        landmarks = Landmarks.model_validate_json(response.text.replace("```json", "").replace("```", ""))
+        out_dir = Path(__file__).resolve().parent
+        output_png = out_dir / "landmarks_output.png"
+        draw_landmarks_on_image(image_path, landmarks, str(output_png))
     except Exception as e:
         print("❌ Gemini API call failed.")
         print(f"Error: {e!r}")

@@ -11,7 +11,7 @@ from transformers import (
 from peft import get_peft_model, LoraConfig, prepare_model_for_kbit_training
 import os
 
-from dataset import LanguageDistanceDataset
+from dataset import HistoryVisionOnlyDataset
 
 MODEL_ID = "google/paligemma2-3b-pt-224"
 
@@ -72,18 +72,32 @@ def setup_model():
     return model, collate_fn
 
 def train(model, collate_fn):
-    os.environ["WANDB_PROJECT"] = "language-distance-paligemma-multimodal-new-labels" 
+    os.environ["WANDB_PROJECT"] = "language-distance-paligemma-history" 
     os.environ["WANDB_LOG_MODEL"] = "checkpoint"             
 
-    train_dataset = LanguageDistanceDataset(annotations_folder="/home/alekseyvalouev/goalnav/language-annotations-train-new", directional=False)
-    val_dataset = LanguageDistanceDataset(annotations_folder="/home/alekseyvalouev/goalnav/language-annotations-test-new", directional=False)
+    sacson_train_scenes = [
+        "Dec-06-2022-bww8_00000030_10", "Feb-09-2023-bww8-intloss_00000022_1", 
+        "Jan-17-2023-bww8_00000001_0", "Dec-06-2022-bww8_00000037_0", "Feb-09-2023-bww8-intloss_00000031_4", 
+        "Jan-17-2023-bww8_00000001_5", "Dec-07-2022-bww8_00000000_12", "Feb-09-2023-bww8-intloss_00000042_1", 
+        "Jan-17-2023-bww8_00000002_10", "Dec-12-2022-bww8_00000036_0", "Feb-13-2023-bww8-intloss_00000009_3", 
+        "Nov-17-2022-bww8_00000009_2", "Feb-09-2023-bww8-intloss_00000000_0", "Jan-12-2023-bww8_00000008_2", 
+        "Nov-17-2022-bww8_00000012_0", "Jan-12-2023-bww8_00000009_29"
+    ]
+    sacson_test_scenes = [
+        "Dec-06-2022-bww8_00000007_0", "Feb-09-2023-bww8-intloss_00000042_9", "Jan-12-2023-bww8_00000007_22",
+        "Feb-03-2023-bww8-intloss_00000013_1", "Feb-14-2023-bww8-intloss_00000008_25"
+    ]
+
+    train_dataset = HistoryVisionOnlyDataset(scenes=sacson_train_scenes)
+    val_dataset = HistoryVisionOnlyDataset(scenes=sacson_test_scenes)
 
     args = TrainingArguments(
-        output_dir="language-distance-paligemma-multimodal-new-labels",
+        output_dir="language-distance-paligemma-history",
         remove_unused_columns=False,
         num_train_epochs=3,
-        per_device_train_batch_size=2,
-        gradient_accumulation_steps=4,
+        per_device_train_batch_size=1,
+        per_device_eval_batch_size=1,
+        gradient_accumulation_steps=8,
         warmup_steps=2,
         learning_rate=2e-5,
         weight_decay=1e-6,

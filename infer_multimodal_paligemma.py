@@ -9,7 +9,7 @@ import os
 from dataset import LanguageDistanceDataset
 
 MODEL_ID = "google/paligemma2-3b-pt-224"
-CHECKPOINT = "/home/alekseyvalouev/goalnav/language-distance/language-distance-paligemma-multimodal/checkpoint-4200"
+CHECKPOINT = "/home/alekseyvalouev/goalnav/language-distance/language-distance-paligemma-multimodal-new-labels/checkpoint-3200"
 NUM_SAMPLES = 16
 
 
@@ -101,7 +101,7 @@ def main():
 
     print("Loading val dataset...")
     val_dataset = LanguageDistanceDataset(
-        annotations_folder="/home/alekseyvalouev/goalnav/language-annotations-test"
+        annotations_folder="/home/alekseyvalouev/goalnav/language-annotations-test-new"
     )
 
     indices = np.linspace(0, len(val_dataset) - 1, NUM_SAMPLES, dtype=int)

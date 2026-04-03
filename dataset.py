@@ -104,21 +104,170 @@ class SacsonDataset(Dataset):
             start_img = self.transform(start_img)
             end_img = self.transform(end_img)
         label = horizon
-        if label == -1 and not self.classification:
-            label = max(self.horizons)
+        #if label == -1 and not self.classification:
+        #    label = max(self.horizons)
         if self.classification:
             label = self.labels[horizon]
         else:
-            label = int(label*self.scale_factor)
+            if label != -1:
+                label = int(label*self.scale_factor)
+
         return start_name, end_name, start_scene, end_scene, start_img, end_img, label
+
+class SacsonHistoryDataset(Dataset):
+    def __init__(self, scenes, horizons=[2, 4, 8, 16], context_size=0, negative_samples=True, transform=None, classification=True):
+        # We assume the mean distance between samples is 0.2 meters. 
+        # This means that the label is delta(indices) * 0.4
+        self.scale_factor = 0.4
+        self.horizons = []
+        self.labels = {}
+        # for our output, we do [B, C*(context_size + 1), H, W]
+        self.context_size = context_size
+        for i, h in enumerate(horizons):
+            assert h / self.scale_factor % 1 == 0, "Horizon must be a multiple of 0.4 (scaling factor for Sacson)"
+            self.horizons.append(int(h / self.scale_factor))
+            self.labels[int(h / self.scale_factor)] = i
+        self.scenes = scenes
+        self.negative_samples = negative_samples
+        self.transform = transform
+        self.classification = classification
+        self._load_data()
+        if self.negative_samples:
+            self._load_negative_samples()
+            self.labels[-1] = -1
+    
+    def _load_data(self):
+        self.data = []
+        self.data_path = "/hdd/sacson"
+        for scene in self.scenes:
+            folder = os.path.join(self.data_path, scene)
+            # we're in the folder. get the highest #'ed image. 
+            images = list(filter(lambda x: x.endswith(".jpg"), os.listdir(folder)))
+            images.sort(key=lambda x: int(x.split(".")[0]))
+            highest_image = images[-1]
+            max_idx = int(highest_image.split(".")[0])
+
+            for h in self.horizons:
+                for i in range(max_idx - h + 1):
+                    start_idx = i
+                    end_idx = i + h
+                    start_img = images[start_idx]
+                    start_idx = int(start_img.split(".")[0])
+                    if start_idx < self.context_size:
+                        continue
+                    end_img = images[end_idx]
+                    start_img = os.path.join(folder, start_img)
+                    end_img = os.path.join(folder, end_img)
+                    self.data.append((start_img, end_img, h))
+
+        print(f"Loaded dataset with {len(self.data)} samples.")
+    
+    def _make_random_sample(self, scene, min_idx=0):
+        folder = os.path.join(self.data_path, scene)
+        images = list(filter(lambda x: x.endswith(".jpg") and int(x.split(".")[0]) >= min_idx, os.listdir(folder)))
+        image = random.choice(images)
+        return os.path.join(folder, image)
+
+    def _load_negative_samples(self):
+        self.negative_samples = []
+        p = 0.5
+        for _ in range(int(len(self.data) * p)):
+            while True:
+                scene_start, scene_end = np.random.choice(self.scenes, size=2, replace=False)
+                try:
+                    start_img = self._make_random_sample(scene_start, min_idx=self.context_size)
+                    end_img = self._make_random_sample(scene_end)
+                    self.negative_samples.append((start_img, end_img, -1))
+                    break
+                except Exception as e:
+                    continue
+            
+        self.data.extend(self.negative_samples)
+
+        print(f"Generated {len(self.negative_samples)} negative samples.")
+    
+    def _get_image(self, image_path):
+        img = Image.open(image_path).convert("RGB")
+
+        # Resize so that the smallest dimension is 224 while preserving aspect ratio
+        width, height = img.size
+        scale = 224.0 / min(width, height)
+        new_width = int(round(width * scale))
+        new_height = int(round(height * scale))
+        img = img.resize((new_width, new_height), Image.BILINEAR)
+
+        # Center crop to 224x224
+        left = (new_width - 224) // 2
+        top = (new_height - 224) // 2
+        right = left + 224
+        bottom = top + 224
+        img = img.crop((left, top, right, bottom))
+
+        return np.array(img)
+    
+    def __len__(self):
+        return len(self.data)
+    
+    def __getitem__(self, idx):
+        start_img, end_img, horizon = self.data[idx]
+        # basically we want start_img and the previous context_size images before it. 
+        start_idx = int(start_img.split("/")[-1].split(".")[0])
+        end_idx = int(end_img.split("/")[-1].split(".")[0])
+        start_name, end_name = start_img.split("/")[-1], end_img.split("/")[-1]
+        start_scene, end_scene = start_img.split("/")[-2], end_img.split("/")[-2]
+
+        folder = os.path.join(self.data_path, start_scene)
+        start_imgs = []
+        for i in range(start_idx - self.context_size, start_idx):
+            start_imgs.append(os.path.join(folder, f"{i}.jpg"))
+        start_imgs.append(start_img)
+        try:
+            start_imgs = [self._get_image(img) for img in start_imgs]
+        except Exception as e:
+            print(e)
+            print(start_imgs)
+            raise RuntimeError("Failed to get all start images")
+        end_img = self._get_image(end_img)
+        if self.transform:
+            start_imgs = [self.transform(img) for img in start_imgs]
+            end_img = self.transform(end_img)
+        label = horizon
+        #if label == -1 and not self.classification:
+        #    label = max(self.horizons)
+        if self.classification:
+            label = self.labels[horizon]
+        else:
+            if label != -1:
+                label = int(label*self.scale_factor)
+            else:
+                label = max(self.horizons)*self.scale_factor*2
+
+        return start_name, end_name, start_scene, end_scene, start_imgs, end_img, label
+
+class HistoryVisionOnlyDataset(Dataset):
+    def __init__(self, scenes, horizons=[2, 4, 8, 16], context_size=5, negative_samples=True, transform=None, classification=True):
+        self.sacson_data = SacsonHistoryDataset(scenes, horizons, context_size=context_size, negative_samples=negative_samples, transform=transform, classification=classification)
+    
+    def __len__(self):
+        return len(self.sacson_data)
+    
+    def __getitem__(self, idx):
+        start_name, end_name, start_scene, end_scene, start_imgs, end_img, label = self.sacson_data[idx]
+        return {
+            "image": start_imgs + [end_img],
+            "prefix": f"answer en Context: {'<image> ' * len(start_imgs)} Ending image: <image> What is the temporal distance?\n",
+            "suffix": f"{label}"
+        }
 
 
 class LanguageDistanceDataset(Dataset):
-    def __init__(self, annotations_folder, horizons=[2, 4, 8, 16], transform=None, text_only=False):
+    def __init__(self, annotations_folder, horizons=[2, 4, 8, 16], transform=None, text_only=False, full_sample=False, directional=False):
         self.annotations_folder = annotations_folder
         self.horizons = horizons
         self.transform = transform
         self.text_only = text_only
+        self.full_sample = full_sample
+        self.directional = directional
         self._load_data()
 
         # now load the actual sacson loader
@@ -138,11 +287,26 @@ class LanguageDistanceDataset(Dataset):
             self.annotations[scene_name] = annotation["landmarks"]
     
     def __len__(self):
-        return len(self.sacson_data)
+        if not self.full_sample:
+            return len(self.sacson_data)
+        else:
+            return len(self.sacson_data) * 7 # 7 possible options for each sample
     
     def __getitem__(self, idx):
-        # I think transforms will actually just break this :(
-        start_name, end_name, start_scene, end_scene, start_img, end_img, label = self.sacson_data[idx]
+
+        options = ["L-L"] if self.text_only else ["V-V", "VL-VL", "L-V", "V-L", "V-VL", "VL-V", "L-VL"]
+
+        if not self.full_sample:
+            start_name, end_name, start_scene, end_scene, start_img, end_img, label = self.sacson_data[idx]
+            option = np.random.choice(options).split("-")
+            start_option = option[0]
+            end_option = option[1]
+        else:
+            start_name, end_name, start_scene, end_scene, start_img, end_img, label = self.sacson_data[idx // 7]
+            option = options[idx % 7].split("-")
+            start_option = option[0]
+            end_option = option[1]
+        
         start_landmarks = self.annotations[start_scene][start_name]
         end_landmarks = self.annotations[end_scene][end_name]
         start_landmarks_str = " ".join([f"{i+1}. {landmark}" for i, landmark in enumerate(start_landmarks)])
@@ -153,12 +317,16 @@ class LanguageDistanceDataset(Dataset):
         start_landmarks_str = f"Starting landmarks: {start_landmarks_str}"
         end_landmarks_str = f"Ending landmarks: {end_landmarks_str}"
 
-        options = ["L-L"] if self.text_only else ["V-V", "VL-VL", "L-V", "V-L", "V-VL", "VL-V", "L-VL"]
-        option = np.random.choice(options).split("-")
-        start_option = option[0]
-        end_option = option[1]
-
         images = []
+
+        if label == -1:
+            label = 99
+        
+        if self.directional:
+            if "V" in (start_option, end_option):
+                start_id, end_id = int(start_name.split(".")[-2]), int(end_name.split(".")[-2])
+                if start_id > end_id:
+                    label = 99 
 
         start_prompt = ""
         for char in start_option:
@@ -216,6 +384,9 @@ class BinaryReachabilityDataset(Dataset):
     def __getitem__(self, idx):
         # I think transforms will actually just break this :(
         start_name, end_name, start_scene, end_scene, start_img, end_img, label = self.sacson_data[idx]
+
+        start_id, end_id = int(start_name.split(".")[-2]), int(end_name.split(".")[-2])
+
         if label == -1 or label > 8:
             label = 0
         else:
@@ -232,6 +403,12 @@ class BinaryReachabilityDataset(Dataset):
 
         options = ["L-L"] if self.text_only else ["V-V", "VL-VL", "L-V", "V-L", "V-VL", "VL-V", "L-VL"]
         option = np.random.choice(options).split("-")
+
+        # images must be connected in the correct order. 
+        if option == "V-V":
+            if start_id > end_id:
+                label = 0
+
         start_option = option[0]
         end_option = option[1]
 

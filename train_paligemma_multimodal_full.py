@@ -72,14 +72,14 @@ def setup_model():
     return model, collate_fn
 
 def train(model, collate_fn):
-    os.environ["WANDB_PROJECT"] = "language-distance-paligemma-multimodal-new-labels" 
+    os.environ["WANDB_PROJECT"] = "language-distance-paligemma-multimodal-directional" 
     os.environ["WANDB_LOG_MODEL"] = "checkpoint"             
 
-    train_dataset = LanguageDistanceDataset(annotations_folder="/home/alekseyvalouev/goalnav/language-annotations-train-new", directional=False)
-    val_dataset = LanguageDistanceDataset(annotations_folder="/home/alekseyvalouev/goalnav/language-annotations-test-new", directional=False)
+    train_dataset = LanguageDistanceDataset(annotations_folder="/home/alekseyvalouev/goalnav/language-annotations-train", full_sample=True)
+    val_dataset = LanguageDistanceDataset(annotations_folder="/home/alekseyvalouev/goalnav/language-annotations-test", full_sample=True)
 
     args = TrainingArguments(
-        output_dir="language-distance-paligemma-multimodal-new-labels",
+        output_dir="language-distance-paligemma-multimodal-directional",
         remove_unused_columns=False,
         num_train_epochs=3,
         per_device_train_batch_size=2,

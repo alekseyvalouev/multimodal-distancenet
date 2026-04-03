@@ -39,7 +39,7 @@ def setup_gemini():
 
 def get_annotations(client, image_bytes):
     response = client.models.generate_content(
-        model="gemini-3-pro-image-preview",
+        model="gemini-3.1-pro-preview",
         contents=[
             genai.types.Part.from_bytes(
                 data=image_bytes,
@@ -48,6 +48,7 @@ def get_annotations(client, image_bytes):
             annotate_landmarks
         ],
         config={
+            "temperature": 0,
             "response_mime_type": "application/json",
             "response_schema": Landmarks,
         },
@@ -58,8 +59,25 @@ def main():
     client = setup_gemini()
 
     data_path = "/hdd/sacson"
-    out_path = "/home/alekseyvalouev/goalnav/language-annotations"
-    traj_paths = glob.glob(os.path.join(data_path, "*bww8*"), recursive=True)[1:MAX_FOLDERS+1]
+    out_path = "/home/alekseyvalouev/goalnav/language-annotations-train-new"
+    #traj_paths = glob.glob(os.path.join(data_path, "*bww8*"), recursive=True)[1:MAX_FOLDERS+1]
+
+
+    #scenes = ['Feb-15-2023-cory1_00000004_6', 
+    #'Feb-16-2023-cory1-intloss_00000023_0', 
+    #'Feb-15-2023-cory1_00000006_5', 
+    #'Feb-15-2023-cory1_00000000_0', 
+    #'Feb-16-2023-cory1-intloss_00000021_1', 
+    #'Feb-15-2023-cory1_00000006_4'
+    #]
+    scenes = ["Dec-06-2022-bww8_00000030_10", "Feb-09-2023-bww8-intloss_00000022_1", 
+    "Jan-17-2023-bww8_00000001_0", "Dec-06-2022-bww8_00000037_0", "Feb-09-2023-bww8-intloss_00000031_4", 
+    "Jan-17-2023-bww8_00000001_5", "Dec-07-2022-bww8_00000000_12", "Feb-09-2023-bww8-intloss_00000042_1", 
+    "Jan-17-2023-bww8_00000002_10", "Dec-12-2022-bww8_00000036_0", "Feb-13-2023-bww8-intloss_00000009_3", 
+    "Nov-17-2022-bww8_00000009_2", "Feb-09-2023-bww8-intloss_00000000_0", "Jan-12-2023-bww8_00000008_2", 
+    "Nov-17-2022-bww8_00000012_0", "Jan-12-2023-bww8_00000009_29"]
+    traj_paths = [os.path.join(data_path, scene) for scene in scenes]
+
     print(f"Found {len(traj_paths)} folders.")
 
     for i, traj_path in enumerate(traj_paths):

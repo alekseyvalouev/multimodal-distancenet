@@ -15,3 +15,4 @@ wandb/
 *.pyzwz
 *.pyzwzw
 language-distance-*/
+*.jsonl
